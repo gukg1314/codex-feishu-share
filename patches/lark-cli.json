@@ -1,0 +1,38 @@
+[
+  {
+    "file": "internal/keychain/keychain.go",
+    "sha256": "e2d4dfcc36b349774dab67aea5d35857335a8fb06b7b51769c00f6d106a71d8e",
+    "reason": "独立钥匙串 service，隔离本机 CLI 的 Secret 和 token。",
+    "replacements": [
+      {
+        "before": "LarkCliService = \"lark-cli\"",
+        "after": "LarkCliService = \"codex-feishu-share\"",
+        "count": 1
+      }
+    ]
+  },
+  {
+    "file": "shortcuts/im/im_messages_send.go",
+    "sha256": "462e7daeb364a60e42e70fdae3684e0fc903e117234c9aee6d57b8c71051facc",
+    "reason": "DryRun 和 Execute 对手工 post --content 保留原文。",
+    "replacements": [
+      {
+        "before": "if msgType == \"text\" || msgType == \"post\" {",
+        "after": "if msgType == \"text\" || (msgType == \"post\" && runtime.Str(\"content\") == \"\") {",
+        "count": 2
+      }
+    ]
+  },
+  {
+    "file": "cmd/auth/logout.go",
+    "sha256": "109b37ff585a183efba8a8135cb0a6b53d3c4980229f22c6301760598db4d0d1",
+    "reason": "仅删除私有本地 token，禁止远端 revoke 影响同应用其他客户端。",
+    "replacements": [
+      {
+        "before": "\thttpClient, httpErr := f.HttpClient()\n\tappSecret, secretErr := core.ResolveSecretInput(app.AppSecret, f.Keychain)\n\n\tfor _, user := range app.Users {\n\t\tif httpErr == nil && secretErr == nil {\n\t\t\tif token := larkauth.GetStoredToken(app.AppId, user.UserOpenId); token != nil {\n\t\t\t\trevokeToken := token.RefreshToken\n\t\t\t\ttokenTypeHint := \"refresh_token\"\n\t\t\t\tif revokeToken == \"\" {\n\t\t\t\t\trevokeToken = token.AccessToken\n\t\t\t\t\ttokenTypeHint = \"access_token\"\n\t\t\t\t}\n\t\t\t\tif revokeToken != \"\" {\n\t\t\t\t\t_ = larkauth.RevokeToken(httpClient, app.AppId, appSecret, app.Brand, revokeToken, tokenTypeHint)\n\t\t\t\t}\n\t\t\t}\n\t\t}\n",
+        "after": "\tfor _, user := range app.Users {\n",
+        "count": 1
+      }
+    ]
+  }
+]

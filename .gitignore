@@ -1,0 +1,11 @@
+node_modules/
+dist/
+bin/
+.cache/
+.packaging/
+release/
+runtime/
+*.log
+*.tmp
+assets/app.icns
+.DS_Store
