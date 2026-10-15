@@ -19,7 +19,7 @@ async function start(options = {}) {
   app.setName(title());
   if (!app.requestSingleInstanceLock()) { app.quit(); return; }
   let shareWindow, settingsWindow, tray, observer, index, matcher;
-  let current = null, quitting = false;
+  let current = null, quitting = false, starting = true;
   let lark;
   app.on('before-quit', () => {
     quitting = true; observer?.close(); index?.close(); matcher?.clear(); lark?.dispose?.();
@@ -61,12 +61,12 @@ async function start(options = {}) {
     log('settings_opened', { reason, visible: Boolean(settingsWindow?.isVisible()) });
   }
   function activate(reason) {
-    if (state.desktop.hideDock || current?.phase === 'sending') { log('activation_ignored', { reason }); return; }
+    if (starting || current?.phase === 'sending') { log('activation_ignored', { reason, cause: starting ? 'starting' : 'sending' }); return; }
     if (current?.phase === 'sharing') { shareWindow.show(); shareWindow.focus(); }
     else openSettings(reason);
   }
   app.on('second-instance', () => activate('second-instance'));
-  app.on('activate', (_event, hasVisibleWindows) => { if (!hasVisibleWindows) activate('dock-activate'); });
+  app.on('activate', (_event, hasVisibleWindows) => { if (!hasVisibleWindows) activate('app-activate'); });
   await app.whenReady();
   const openedAtLogin = Boolean(refreshLoginSettings()?.wasOpenedAtLogin);
   log('desktop_startup', { ...state.desktop, openedAtLogin });
@@ -250,9 +250,10 @@ async function start(options = {}) {
     state.listener = { status, ...(status === 'error' ? { error: '剪贴板监听异常，请退出并重新启动软件，查看诊断日志。' } : {}) }; publish();
   }, log, { benchmark: Boolean(options.benchmark) });
   await observer.ready;
+  starting = false;
   log('app_ready', { name: app.getName(), version: app.getVersion(), architecture: process.arch, replies: index.records.size });
   if (!options.benchmark) {
-    if (!state.configured && !openedAtLogin) openSettings('first-setup');
+    if (!openedAtLogin) openSettings('manual-startup');
     if (state.configured) lark.authStatus().then((auth) => { state.auth = auth; publish(); }).catch(() => { state.auth = { status: 'error', error: '无法检查登录状态，请在设置重新登录。' }; publish(); });
   }
   app.on('window-all-closed', () => { /* Windows hide on close; only the Quit menu ends the app. */ });
