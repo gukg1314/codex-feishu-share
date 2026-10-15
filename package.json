@@ -1,6 +1,6 @@
 {
   "name": "codex-feishu-share",
-  "version": "1.0.4",
+  "version": "1.0.7",
   "private": true,
   "type": "module",
   "main": "dist/main/main.cjs",
