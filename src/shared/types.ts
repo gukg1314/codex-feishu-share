@@ -10,6 +10,7 @@ export type LarkContactOption = {
   openId: string;
   name: string;
   department?: string;
+  avatarUrl?: string;
 };
 
 export type ShareMessage = { id: string; text: string };

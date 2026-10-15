@@ -123,6 +123,7 @@ export function LarkMessageShareDialog({ shareId, message, onClose }: LarkMessag
             id: contact.openId,
             name: contact.name,
             detail: contact.department || "人员",
+            avatarUrl: contact.avatarUrl,
           })));
         })
         .catch((error) => {

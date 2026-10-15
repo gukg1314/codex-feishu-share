@@ -247,6 +247,13 @@ process.stdin.on('end', () => {
     { open_id: 'bad-id', localized_name: '无效标识', is_activated: true },
     { open_id: 'ou_no_name', localized_name: '  ', is_activated: true },
   ] } });
+  if (args[0] === 'api' && args[1] === 'GET' && args[2] === '/open-apis/search/v1/user') {
+    const params = JSON.parse(args[args.indexOf('--params') + 1]);
+    if (params.query === 'avatar-failure') return output({ ok: false, error: { message: 'avatar lookup failed' } }, 2);
+    return output({ ok: true, data: { users: [
+      { open_id: 'ou_person1', avatar: { avatar_72: 'https://example.invalid/avatar.png' } },
+    ] } });
+  }
   if (args[0] === 'im' && args[1] === '+chat-search') return output({ ok: true, data: { chats: [
     { chat_id: 'oc_group1', name: '项目群', chat_status: 'normal', external: true },
     { chat_id: 'oc_group1', name: '重复群', chat_status: 'normal' },
@@ -311,9 +318,14 @@ process.stdin.on('end', () => {
 
     const contactQuery = '张'.repeat(49) + '😀' + 'tail';
     const contacts = await service.searchContacts(contactQuery);
-    assert.deepEqual(contacts, [{ openId: 'ou_person1', name: '张三', department: undefined }]);
+    assert.deepEqual(contacts, [{ openId: 'ou_person1', name: '张三', department: undefined, avatarUrl: 'https://example.invalid/avatar.png' }]);
     const contactCall = calls().find((call) => call.args[0] === 'contact');
     assert.equal(contactCall.args[contactCall.args.indexOf('--query') + 1], '张'.repeat(49) + '😀');
+    const avatarCall = calls().find((call) => call.args[0] === 'api');
+    assert.equal(avatarCall.args[2], '/open-apis/search/v1/user');
+    assert.deepEqual(JSON.parse(avatarCall.args[avatarCall.args.indexOf('--params') + 1]), { query: '张'.repeat(49) + '😀', page_size: 200 });
+    assert.equal(avatarCall.args[avatarCall.args.indexOf('--as') + 1], 'user');
+    assert.equal((await service.searchContacts('avatar-failure'))[0].avatarUrl, undefined);
 
     const chatQuery = '群'.repeat(63) + '😀' + '尾';
     const chats = await service.searchChats(chatQuery);

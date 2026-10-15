@@ -275,9 +275,20 @@ function createLarkService({ binary, configDir, log = () => {}, onAuthState = ()
     const normalized = Array.from(typeof query === 'string' ? query.trim() : '').slice(0, 50).join('');
     if (!normalized) return [];
     requireConfig();
+    // 保留现有搜索的部门信息，另取头像并按 open_id 对应。
+    const avatarLookup = invoke('获取人员头像', ['api', 'GET', '/open-apis/search/v1/user',
+      '--params', JSON.stringify({ query: normalized, page_size: 200 }), '--as', 'user', '--format', 'json'],
+      { timeout: 5000, sensitive: [normalized] }).catch(() => undefined);
     const payload = await invoke('搜索人员', ['contact', '+search-user', '--query', normalized,
       '--as', 'user', '--format', 'json'], { timeout: 6000, sensitive: [normalized] });
     if (payload.ok !== true) throw new Error('飞书人员搜索未取得有效确认。');
+    const avatarPayload = await avatarLookup;
+    const avatars = new Map();
+    for (const user of Array.isArray(avatarPayload?.data?.users) ? avatarPayload.data.users : []) {
+      const openId = textValue(user?.open_id);
+      const avatarUrl = textValue(user?.avatar?.avatar_72);
+      if (openId && avatarUrl?.startsWith('https://')) avatars.set(openId, avatarUrl);
+    }
     const contacts = [];
     const seen = new Set();
     for (const user of Array.isArray(payload.data?.users) ? payload.data.users : []) {
@@ -285,9 +296,10 @@ function createLarkService({ binary, configDir, log = () => {}, onAuthState = ()
       const name = textValue(user?.localized_name);
       if (!openId || !/^ou_[a-zA-Z0-9]+$/.test(openId) || !name || user.is_activated === false || seen.has(openId)) continue;
       seen.add(openId);
-      contacts.push({ openId, name, department: textValue(user.department) });
+      contacts.push({ openId, name, department: textValue(user.department), avatarUrl: avatars.get(openId) });
       if (contacts.length === 20) break;
     }
+    log('lark-contact-search-results', { count: contacts.length, avatars: contacts.filter(contact => contact.avatarUrl).length });
     return contacts;
   }
 
