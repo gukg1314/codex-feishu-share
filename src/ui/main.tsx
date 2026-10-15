@@ -22,7 +22,7 @@ function ShareWindow() {
     setShare(null);
   };
 
-  return <main className="h-full bg-white">
+  return <main className="share-page">
     {share && <LarkMessageShareDialog
       key={share.id}
       shareId={share.id}
