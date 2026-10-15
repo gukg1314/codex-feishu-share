@@ -11,7 +11,8 @@ const electron = require('electron');
 const root = path.resolve(__dirname, '..');
 const scenario = process.argv[2] || 'packaged';
 const development = scenario === 'development';
-if (!['packaged', 'login-startup', 'development'].includes(scenario)) throw new Error(`unknown scenario: ${scenario}`);
+const configuredStartup = scenario === 'configured-startup';
+if (!['packaged', 'login-startup', 'development', 'configured-startup'].includes(scenario)) throw new Error(`unknown scenario: ${scenario}`);
 
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-share-desktop-'));
 const dataDir = path.join(tempDir, 'data');
@@ -177,7 +178,7 @@ async function run() {
   const runtimeCalls = stubRuntimeAndClipboard();
   Object.defineProperty(process, 'resourcesPath', { configurable: true, value: root });
   fs.mkdirSync(path.join(dataDir, 'captures'), { recursive: true });
-  fs.writeFileSync(settingsFile, JSON.stringify({ reviewMarker: 'retained' }));
+  fs.writeFileSync(settingsFile, JSON.stringify({ reviewMarker: 'retained', ...(configuredStartup ? { hideDock: true, appId: 'synthetic-app-id' } : {}) }));
   fs.writeFileSync(path.join(dataDir, 'captures', 'synthetic.json'), JSON.stringify({
     text: body, turnId: 'desktop-regression', capturedAt: new Date().toISOString(),
     sha256: digest(body), copySha256: digest(normalize(body)),
@@ -192,10 +193,13 @@ async function run() {
     dispose() {},
   };
   const shownRecords = [];
-  const mainResult = await start({ dataDir, logDir, lark, onShare(current) { shownRecords.push(current.record.text); } });
+  const startPromise = start({ dataDir, logDir, lark, onShare(current) { shownRecords.push(current.record.text); } });
+  electron.app.emit('activate', {}, false);
+  const mainResult = await startPromise;
   registerTempCleanup();
   const settings = mainResult.settingsWindow;
   const share = mainResult.shareWindow;
+  assert.ok(mainLogEntries().some((entry) => entry.event === 'activation_ignored' && entry.reason === 'app-activate' && entry.cause === 'starting'), 'activation during startup is logged and ignored');
   assert.equal(runtimeCalls(), 1, 'normal startup updates the local runtime through its stub');
   assert.equal(mainResult.state.desktop.hideDock, true, 'Dock hiding defaults to enabled');
   assert.equal(mainResult.state.desktop.openAtLogin, false, 'login startup defaults to disabled');
@@ -209,7 +213,22 @@ async function run() {
   if (scenario === 'login-startup') {
     assert.ok(fs.readFileSync(path.join(logDir, 'app.jsonl'), 'utf8').includes('"openedAtLogin":true'));
     assert.equal(fs.readFileSync(path.join(logDir, 'app.jsonl'), 'utf8').includes('settings_opened'), false);
-    return { runtimeCalls: runtimeCalls(), silent: true };
+    electron.app.emit('activate', {}, false);
+    await waitFor(() => settings.isVisible(), 'Finder activation opens settings after a silent login launch');
+    assert.ok(mainLogEntries().some((entry) => entry.event === 'settings_opened' && entry.reason === 'app-activate'));
+    return { runtimeCalls: runtimeCalls(), silent: true, activated: true };
+  }
+
+  if (configuredStartup) {
+    assert.equal(mainResult.state.configured, true, 'configured cold startup uses a synthetic app ID');
+    assert.equal(settings.isVisible(), true, 'a configured manual startup opens settings with the Dock hidden');
+    settings.hide();
+    electron.app.emit('activate', {}, false);
+    await waitFor(() => settings.isVisible(), 'hidden-Dock activation reopens settings');
+    settings.hide();
+    electron.app.emit('second-instance');
+    await waitFor(() => settings.isVisible(), 'a second instance reopens settings');
+    return { runtimeCalls: runtimeCalls(), configured: mainResult.state.configured, hideDock: mainResult.state.desktop.hideDock, activated: true, secondInstance: true };
   }
 
   await waitForDom(settings, "document.querySelector('#hide-dock') && document.querySelector('#open-at-login')", 'settings rendered');
@@ -255,6 +274,13 @@ async function run() {
   await waitFor(() => mainResult.state.desktop.hideDock === true, 'Dock setting restored');
   assert.deepEqual(activationPolicies, ['accessory', 'regular', 'accessory']);
   await waitForDom(settings, '!document.querySelector("#hide-dock").disabled', 'settings action finished');
+  settings.hide();
+  electron.app.emit('activate', {}, false);
+  await waitFor(() => settings.isVisible(), 'hidden-Dock activation reopens settings');
+  settings.hide();
+  electron.app.emit('second-instance');
+  await waitFor(() => settings.isVisible(), 'a second instance reopens settings');
+  settings.hide();
 
   if (development) {
     assert.match(await ipcError(settings, 'setOpenAtLogin', true), /安装正式 App/);
@@ -332,6 +358,15 @@ async function run() {
   assert.deepEqual({ kind: sendRequests[0].payload.recipient.kind, id: sendRequests[0].payload.recipient.id }, { kind: 'user', id: 'ou_test1' });
   assert.equal(typeof sendRequests[0].key, 'string');
   assert.ok(sendRequests[0].key.length > 0);
+  const ignoredBeforeSend = mainLogEntries().filter((entry) => entry.event === 'activation_ignored').length;
+  electron.app.emit('activate', {}, false);
+  electron.app.emit('second-instance');
+  await waitFor(() => mainLogEntries().filter((entry) => entry.event === 'activation_ignored').length === ignoredBeforeSend + 2, 'activation events during send are logged');
+  assert.deepEqual(mainLogEntries().filter((entry) => entry.event === 'activation_ignored').slice(-2).map(({ reason, cause }) => ({ reason, cause })), [
+    { reason: 'app-activate', cause: 'sending' }, { reason: 'second-instance', cause: 'sending' },
+  ]);
+  assert.equal(settings.isVisible(), false, 'activation during send does not show settings');
+  assert.equal(share.isVisible(), false, 'activation during send does not show the share window');
 
   const sharesBeforeBusyCopy = shownRecords.length;
   const busyCopyBody = '发送期间复制的另一条合成回复。';
